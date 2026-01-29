@@ -2,7 +2,6 @@ import cv2
 from PIL import Image
 import numpy as np
 
-
 images = {
     "hytale":"hytale.webp",
     "miku":"miku.png",
@@ -11,15 +10,115 @@ images = {
     "mikupng":"mikuv2.png"
 }
 
+LOW_EDGE_THRESHOLD = 50
+HIGH_EDGE_THRESHOLD = 150
+
+class MergeSections:
+    def __init__(self):
+        self.nodes_merge_intersections = []
+        self.edges_non_merge_sections = []
+class State:
+    def __init__(self):
+        self.img = None
+        self.filename = None
+        self.edges = None
+        self.hierarchy = None
+        self.contours_raw = None
+        self.merge_sections = MergeSections()
+
+def contour_convert(state):
+    if state is None or state.img is None:
+        raise FileNotFoundError(f"image not created")
+    gray = cv2.cvtColor(state.img, cv2.COLOR_BGR2GRAY)
+    edges = cv2.Canny(gray, threshold1=LOW_EDGE_THRESHOLD, threshold2=HIGH_EDGE_THRESHOLD)
+    contours, hierarchy = cv2.findContours(edges, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+    return edges, contours, hierarchy
+
+def load_image(state):
+    if state is None or state.filename not in images:
+        raise KeyError(f"image {state.filename} not found in images")
+    img = cv2.imread(images[state.filename], cv2.IMREAD_UNCHANGED)
+    if img is None:
+        raise FileNotFoundError(f"image not created")
+    return img
+
+def find_merges(contour1, contour2):
+    if state is None or state.contours_raw is None:
+        raise KeyError(f"state.countours not found in state object")
+    
+    merge_sections = MergeSections()
+    contours = state.contours_raw
+            
+
+    return merge_sections
+
+def merge(state):
+    if state is None or state.contours_raw is None:
+        raise KeyError(f"state.countours not found in state object")
+    
+    contours = state.contours_raw
+
+    a_contour_was_changed = False
+    while a_contour_was_changed:
+        for i in range(contours):
+            contour_base = contours[i]
+            for j in range(i+1, len(contours)):
+                contour_comparison = contours[j]
+                a_contour_was_changed = check_for_merges()
+
+    def check_for_merges():
+        merge_sections = MergeSections()
+        merge_sections = find_merges(contour_base, contour_comparison)
+        if merge_sections.nodes_merge_intersections == []:
+            return False
+        # else run the merge algo
+        return True
+
+    return None
+
 if __name__ == "__main__":
-    print("hello")
-    img = cv2.imread(images["shape"], cv2.IMREAD_UNCHANGED)
-    #blurred = cv2.GaussianBlur(img, (3,3), 0)
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    #gray = cv2.GaussianBlur(gray, (3, 3), 0)
-    edges = cv2.Canny(gray, threshold1=50, threshold2=150)
-    edges = cv2.ximgproc.thinning(edges)
+    state = State()
+    state.filename = "shape"
+
+    state.img = load_image(state)
+    state.edges, state.contours_raw, state.hierarchy = contour_convert(state)
+    state.merged_contour = merge(state)
+
+    # temp rendering code
+    # nah this ain't worth it the eps is too small anyways
+
+    contour_image = np.zeros_like(state.img)
+
+    cv2.drawContours(contour_image, state.contours_raw, contourIdx=-1, color=(255, 255, 255), thickness=1)
     cv2.namedWindow('Grayscale', cv2.WINDOW_NORMAL)
-    cv2.imshow('Grayscale', edges)
+    cv2.imshow('Grayscale', contour_image)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
+
+
+
+
+# grayscale, cleanup, gaussian
+    # edge detection
+    # get a list of contours
+    # set flag to false
+    # ingnore the trivial i=j case (index x,x)
+    # for every countour, pairwise check to return a list of MergeSections: {sections: [pairs of indices where misdist is under a threshold], nonmergec1:[nested list of indices for non-merged sections], indicesc2:[same for c2]} ]
+        # define a MergeSection as: dist between points is under some threshold. once I go above that threshold, start counting down. once I hit zero, that's the end of the threshold. If I go back below the threshold, then it's still the same segment and I reset the counter
+        #can use a many to many mapping, that's fine -- when I merge them together it'll be the easiest
+    # merge by averaging each pair of points, and making each index from list of segments a "merge section"
+        # then pick the first merge section, and add that to the merged contour. trace a set of points until I exit the merge section, then pick a non-traversed non-merge segment.
+        # traverse until I reach another intersection.
+        # repeat until I return to home node and there are no more non-traversed edges
+        # provably works because each node has an even number of connected edges, and if you leave then you enter the next time or vice versa, so on non-starter nodes enter->leave->enter->leave (done) and for starter nodes have leave->...enter (done) . Also, you are forced to remove 2 non-traversed edges each time you visit a node, so therefore you are forced to end on starter when there are no more non-traversed edges
+        # append the merged contour to a list, and to a "merged" list to avoid duplicating like (2,3) and (3,2)
+    # set the countour list to that list, and flag = true
+    # repeat while flag = true
+
+
+# figure out how to convert a gif into a set of images
+# parse some .osu file so that I can grab timing data so that I know what offset to place the object + the slider velocity
+# build the slider strings based on the slider path I generate in the code
+
+# try to figure out an algo to always make the slider ssable
+# stack a simple GUI layer on top so that the tool isn't restricted to command line

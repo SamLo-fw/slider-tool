@@ -44,27 +44,62 @@ def load_image(state):
         raise FileNotFoundError(f"image not created")
     return img
 
-def find_merges(contour1, contour2):
+def find_merges(c1, c2):
     if state is None or state.contours_raw is None:
         raise KeyError(f"state.countours not found in state object")
     
-    merge_sections = MergeSections()
-    
-    counter_down = 0
-    arr = merge_sections.edges_non_merge_sections
-    for point_1 in contour1:
-        for point_2 in contour2:
-            del_vect = point_2 - point_1
+    #find merge pairs
+    merge_arr = []
+    nonmerge_arr = []
+    for i in range(len(c1)):
+        for j in range(len(c2)):
+            del_vect = c2[j] - c1[i]
             if np.linalg.norm(del_vect) < MERGE_THRESHOLD:
-                counter_down = MERGE_TOLERANCE
-                arr = merge_sections.nodes_merge_intersections
+                merge_arr.append((i, j, c1[i], c2[j], ((c1[i][0]+c2[j][0])/2, c1[i][1]+c2[j][1]))) #let's just do this naively for now
             else:
-                counter_down = counter_down - 1
-                if counter_down<=0:
-                    arr = merge_sections.edges_non_merge_sections
-            
-            arr.append((point_1, point_2)) #let's just do this naively for now
-            
+                nonmerge_arr.append((i, j, c1[i], c2[j]))
+
+    #merge nearby    
+    merge_sections = []
+    visited = set()
+    for index, data in enumerate(merge_arr):
+        if index in visited: continue
+
+        current_section = []
+        stack = [index]
+
+        while stack:
+            curr_idx = stack.pop(index)
+            if curr_idx in visited: continue
+            current_section.append(merge_arr[curr_idx])
+            visited.add(curr_idx)
+
+            for other_idx, other_data in enumerate(merge_arr):
+                if other_idx in visited: continue
+                if np.linalg.norm(data[4] - other_data[4]) < MERGE_THRESHOLD:
+                    stack.append(other_idx)
+        
+        merge_sections.append(current_section)
+
+    #find range of each merge section
+    indexed_sections = []
+    for section in merge_sections:
+        i_indices = [data[0] for data in section]
+        j_indices = [data[1] for data in section]
+
+        indexed_sections.append({
+            "section":section,
+            "max_i_index":max(i_indices), 
+            "min_i_index":min(i_indices), 
+            "max_j_indices":max(j_indices), 
+            "min_j_indices":min(j_indices)})
+    
+    #partition
+    for 
+    
+
+
+
     return merge_sections
 
 def perform_merge(contour1, contour2, to_merge):

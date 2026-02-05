@@ -12,6 +12,8 @@ images = {
 
 LOW_EDGE_THRESHOLD = 50
 HIGH_EDGE_THRESHOLD = 150
+MERGE_THRESHOLD = 10
+MERGE_TOLERANCE = 10
 
 class MergeSections:
     def __init__(self):
@@ -47,32 +49,58 @@ def find_merges(contour1, contour2):
         raise KeyError(f"state.countours not found in state object")
     
     merge_sections = MergeSections()
-    contours = state.contours_raw
+    
+    counter_down = 0
+    arr = merge_sections.edges_non_merge_sections
+    for point_1 in contour1:
+        for point_2 in contour2:
+            del_vect = point_2 - point_1
+            if np.linalg.norm(del_vect) < MERGE_THRESHOLD:
+                counter_down = MERGE_TOLERANCE
+                arr = merge_sections.nodes_merge_intersections
+            else:
+                counter_down = counter_down - 1
+                if counter_down<=0:
+                    arr = merge_sections.edges_non_merge_sections
             
-
+            arr.append((point_1, point_2)) #let's just do this naively for now
+            
     return merge_sections
+
+def perform_merge(contour1, contour2, to_merge):
+    return None
 
 def merge(state):
     if state is None or state.contours_raw is None:
         raise KeyError(f"state.countours not found in state object")
     
-    contours = state.contours_raw
+    contours = [{'contour':c, 'checked':False} for c in state.contours_raw]
+    merge_sections = None
 
-    a_contour_was_changed = False
+    a_contour_was_changed = True
     while a_contour_was_changed:
-        for i in range(contours):
-            contour_base = contours[i]
-            for j in range(i+1, len(contours)):
-                contour_comparison = contours[j]
-                a_contour_was_changed = check_for_merges()
+        a_contour_was_changed = False
 
-    def check_for_merges():
-        merge_sections = MergeSections()
-        merge_sections = find_merges(contour_base, contour_comparison)
-        if merge_sections.nodes_merge_intersections == []:
-            return False
-        # else run the merge algo
-        return True
+        for i in range(len(contours)):
+            contour_base = contours[i]["contour"]
+            if contours[i]["checked"]: continue
+
+            for j in range(i+1, len(contours)):
+                contour_comparison = contours[j]["contour"]
+                merge_sections = find_merges(contour_base, contour_comparison)
+
+                if merge_sections:
+                    merged_contour = {'contour': perform_merge(contours[i], contours[j], merge_sections),'checked':False}
+                    contours[i] = merged_contour
+                    contours.pop(j)
+                    a_contour_was_changed = True
+                    break
+
+            if not a_contour_was_changed:
+                contours[i]["checked"] = True
+        
+        if not a_contour_was_changed and all(c['checked'] for c in contours):
+            break
 
     return None
 

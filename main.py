@@ -1,6 +1,7 @@
 import cv2
 from PIL import Image
 import numpy as np
+import heapq
 
 images = {
     "hytale":"hytale.webp",
@@ -82,12 +83,12 @@ def find_merges(c1, c2):
         merge_sections.append(current_section)
 
     #find range of each merge section
-    indexed_sections = []
+    indexed_merge_sections = []
     for section in merge_sections:
         i_indices = [data[0] for data in section]
         j_indices = [data[1] for data in section]
 
-        indexed_sections.append({
+        indexed_merge_sections.append({
             "section":section,
             "max_i_index":max(i_indices), 
             "min_i_index":min(i_indices), 
@@ -95,7 +96,40 @@ def find_merges(c1, c2):
             "min_j_indices":min(j_indices)})
     
     #partition
-    for 
+    # generate 2 arrays for the nonmerge sections, ordered by c1, and c2
+    # loop through merge sections, for each section grab max and min index - then, for arrc1_nonmerge, get idices in range
+    # stich the merge section and relevant nonmerge together
+    # run for both c1 and c2
+    # merge section should be symmetric between the two, so only need 1
+    # nonmerge sections can be appended as {"contour":c1/c2, "data":[merge section]}
+    
+    arr_c1_nonmerge = []
+    for data in nonmerge_arr:
+        arr_c1_nonmerge.append((data[0], data[2])) #drop the other data since Im ordering c1. index = data[0]
+    arr_c1_nonmerge.sort(key=lambda x: x[0])
+
+    arr_c2_nonmerge = []
+    for data in nonmerge_arr:
+        arr_c2_nonmerge.append((data[1], data[3])) #drop the other data since Im ordering c2. index = data[1]
+    arr_c2_nonmerge.sort(key=lambda x: x[0])
+
+    c1_nonmerge_index_counter = 0
+    c2_nonmerge_index_counter = 0
+    arr_c1_merge = []
+    arr_c2_merge = []
+
+    #partition c1
+    for c1_section in indexed_merge_sections:
+        min_c1_index = section["min_i_index"]
+        max_c1_index = section["max_i_index"]
+        slice_c1_nonmerge = [item for item in arr_c1_nonmerge if item[0] >= min_c1_index and item[0] <= max_c1_index]
+        slice_c1_merge = sorted(c1_section["section"], key=lambda x: x[0])
+        combined_c1_merge_section = list(heapq.merge(slice_c1_nonmerge, slice_c1_merge, key=lambda x: x[0]))
+        arr_c1_merge.append(combined_c1_merge_section)
+
+    #handle nonmerges for c1
+    
+
     
 
 

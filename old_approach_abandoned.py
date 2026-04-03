@@ -1,0 +1,221 @@
+import cv2
+from PIL import Image
+import numpy as np
+import heapq
+
+images = {
+    "hytale":"hytale.webp",
+    "miku":"miku.png",
+    "miku2":"mikuv2.webp",
+    "shape":"Dodecahedron.png",
+    "mikupng":"mikuv2.png"
+}
+
+LOW_EDGE_THRESHOLD = 50
+HIGH_EDGE_THRESHOLD = 150
+MERGE_THRESHOLD = 10
+MERGE_TOLERANCE = 10
+
+class MergeSections:
+    def __init__(self):
+        self.nodes_merge_intersections = []
+        self.edges_non_merge_sections = []
+class State:
+    def __init__(self):
+        self.img = None
+        self.filename = None
+        self.edges = None
+        self.hierarchy = None
+        self.contours_raw = None
+        self.merge_sections = MergeSections()
+
+def contour_convert(state):
+    if state is None or state.img is None:
+        raise FileNotFoundError(f"image not created")
+    gray = cv2.cvtColor(state.img, cv2.COLOR_BGR2GRAY)
+    edges = cv2.Canny(gray, threshold1=LOW_EDGE_THRESHOLD, threshold2=HIGH_EDGE_THRESHOLD)
+    contours, hierarchy = cv2.findContours(edges, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+    return edges, contours, hierarchy
+
+def load_image(state):
+    if state is None or state.filename not in images:
+        raise KeyError(f"image {state.filename} not found in images")
+    img = cv2.imread(images[state.filename], cv2.IMREAD_UNCHANGED)
+    if img is None:
+        raise FileNotFoundError(f"image not created")
+    return img
+
+def find_merges(c1, c2):
+    if state is None or state.contours_raw is None:
+        raise KeyError(f"state.countours not found in state object")
+    
+    #find merge pairs
+    merge_arr = []
+    nonmerge_arr = []
+    for i in range(len(c1)):
+        for j in range(len(c2)):
+            del_vect = c2[j] - c1[i]
+            if np.linalg.norm(del_vect) < MERGE_THRESHOLD:
+                merge_arr.append((i, j, c1[i], c2[j], ((c1[i][0]+c2[j][0])/2, c1[i][1]+c2[j][1]))) #let's just do this naively for now
+            else:
+                nonmerge_arr.append((i, j, c1[i], c2[j]))
+
+    #merge nearby    
+    merge_sections = []
+    visited = set()
+    for index, data in enumerate(merge_arr):
+        if index in visited: continue
+
+        current_section = []
+        stack = [index]
+
+        while stack:
+            curr_idx = stack.pop(index)
+            if curr_idx in visited: continue
+            current_section.append(merge_arr[curr_idx])
+            visited.add(curr_idx)
+
+            for other_idx, other_data in enumerate(merge_arr):
+                if other_idx in visited: continue
+                if np.linalg.norm(data[4] - other_data[4]) < MERGE_THRESHOLD:
+                    stack.append(other_idx)
+        
+        merge_sections.append(current_section)
+
+    #find range of each merge section
+    indexed_merge_sections = []
+    for section in merge_sections:
+        i_indices = [data[0] for data in section]
+        j_indices = [data[1] for data in section]
+
+        indexed_merge_sections.append({
+            "section":section,
+            "max_i_index":max(i_indices), 
+            "min_i_index":min(i_indices), 
+            "max_j_indices":max(j_indices), 
+            "min_j_indices":min(j_indices)})
+    
+    #partition
+    # generate 2 arrays for the nonmerge sections, ordered by c1, and c2
+    # loop through merge sections, for each section grab max and min index - then, for arrc1_nonmerge, get idices in range
+    # stich the merge section and relevant nonmerge together
+    # run for both c1 and c2
+    # merge section should be symmetric between the two, so only need 1
+    # nonmerge sections can be appended as {"contour":c1/c2, "data":[merge section]}
+    
+    arr_c1_nonmerge = []
+    for data in nonmerge_arr:
+        arr_c1_nonmerge.append((data[0], data[2])) #drop the other data since Im ordering c1. index = data[0]
+    arr_c1_nonmerge.sort(key=lambda x: x[0])
+
+    arr_c2_nonmerge = []
+    for data in nonmerge_arr:
+        arr_c2_nonmerge.append((data[1], data[3])) #drop the other data since Im ordering c2. index = data[1]
+    arr_c2_nonmerge.sort(key=lambda x: x[0])
+
+    c1_nonmerge_index_counter = 0
+    c2_nonmerge_index_counter = 0
+    arr_c1_merge = []
+    arr_c2_merge = []
+
+    #partition c1
+    for c1_section in indexed_merge_sections:
+        min_c1_index = section["min_i_index"]
+        max_c1_index = section["max_i_index"]
+        slice_c1_nonmerge = [item for item in arr_c1_nonmerge if item[0] >= min_c1_index and item[0] <= max_c1_index]
+        slice_c1_merge = sorted(c1_section["section"], key=lambda x: x[0])
+        combined_c1_merge_section = list(heapq.merge(slice_c1_nonmerge, slice_c1_merge, key=lambda x: x[0]))
+        arr_c1_merge.append(combined_c1_merge_section)
+
+    #handle nonmerges for c1
+    
+
+    
+
+
+
+    return merge_sections
+
+def perform_merge(contour1, contour2, to_merge):
+    return None
+
+def merge(state):
+    if state is None or state.contours_raw is None:
+        raise KeyError(f"state.countours not found in state object")
+    
+    contours = [{'contour':c, 'checked':False} for c in state.contours_raw]
+    merge_sections = None
+
+    a_contour_was_changed = True
+    while a_contour_was_changed:
+        a_contour_was_changed = False
+
+        for i in range(len(contours)):
+            contour_base = contours[i]["contour"]
+            if contours[i]["checked"]: continue
+
+            for j in range(i+1, len(contours)):
+                contour_comparison = contours[j]["contour"]
+                merge_sections = find_merges(contour_base, contour_comparison)
+
+                if merge_sections:
+                    merged_contour = {'contour': perform_merge(contours[i], contours[j], merge_sections),'checked':False}
+                    contours[i] = merged_contour
+                    contours.pop(j)
+                    a_contour_was_changed = True
+                    break
+
+            if not a_contour_was_changed:
+                contours[i]["checked"] = True
+        
+        if not a_contour_was_changed and all(c['checked'] for c in contours):
+            break
+
+    return None
+
+if __name__ == "__main__":
+    state = State()
+    state.filename = "shape"
+
+    state.img = load_image(state)
+    state.edges, state.contours_raw, state.hierarchy = contour_convert(state)
+    state.merged_contour = merge(state)
+
+    # temp rendering code
+    # nah this ain't worth it the eps is too small anyways
+
+    contour_image = np.zeros_like(state.img)
+
+    cv2.drawContours(contour_image, state.contours_raw, contourIdx=-1, color=(255, 255, 255), thickness=1)
+    cv2.namedWindow('Grayscale', cv2.WINDOW_NORMAL)
+    cv2.imshow('Grayscale', contour_image)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
+
+
+
+# grayscale, cleanup, gaussian
+    # edge detection
+    # get a list of contours
+    # set flag to false
+    # ingnore the trivial i=j case (index x,x)
+    # for every countour, pairwise check to return a list of MergeSections: {sections: [pairs of indices where misdist is under a threshold], nonmergec1:[nested list of indices for non-merged sections], indicesc2:[same for c2]} ]
+        # define a MergeSection as: dist between points is under some threshold. once I go above that threshold, start counting down. once I hit zero, that's the end of the threshold. If I go back below the threshold, then it's still the same segment and I reset the counter
+        #can use a many to many mapping, that's fine -- when I merge them together it'll be the easiest
+    # merge by averaging each pair of points, and making each index from list of segments a "merge section"
+        # then pick the first merge section, and add that to the merged contour. trace a set of points until I exit the merge section, then pick a non-traversed non-merge segment.
+        # traverse until I reach another intersection.
+        # repeat until I return to home node and there are no more non-traversed edges
+        # provably works because each node has an even number of connected edges, and if you leave then you enter the next time or vice versa, so on non-starter nodes enter->leave->enter->leave (done) and for starter nodes have leave->...enter (done) . Also, you are forced to remove 2 non-traversed edges each time you visit a node, so therefore you are forced to end on starter when there are no more non-traversed edges
+        # append the merged contour to a list, and to a "merged" list to avoid duplicating like (2,3) and (3,2)
+    # set the countour list to that list, and flag = true
+    # repeat while flag = true
+
+
+# figure out how to convert a gif into a set of images
+# parse some .osu file so that I can grab timing data so that I know what offset to place the object + the slider velocity
+# build the slider strings based on the slider path I generate in the code
+
+# try to figure out an algo to always make the slider ssable
+# stack a simple GUI layer on top so that the tool isn't restricted to command line

@@ -1,221 +1,205 @@
-import cv2
-from PIL import Image
+import math
 import numpy as np
-import heapq
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+import rotation_gen as rg
 
-images = {
-    "hytale":"hytale.webp",
-    "miku":"miku.png",
-    "miku2":"mikuv2.webp",
-    "shape":"Dodecahedron.png",
-    "mikupng":"mikuv2.png"
-}
+PHI = 1.61803398874989484820458683
+PHIS = PHI + 1
+FRAME_COUNTER = 56
+SCALE_X = 50.0
+SCALE_Y = 50.0
+FILENAME = "map.osu"
+BASE_OFFSET = 3*60000 + 1472
+REAL_BPM = 165.0
+MS_PER_BEAT = 60000.0 / REAL_BPM
+X_OFFSET = 256
+Y_OFFSET = 192
 
-LOW_EDGE_THRESHOLD = 50
-HIGH_EDGE_THRESHOLD = 150
-MERGE_THRESHOLD = 10
-MERGE_TOLERANCE = 10
+class Point:
+    def __init__(self, x,y,z):
+        self.x = x
+        self.y = y
+        self.z = z
 
-class MergeSections:
+    def position(self) -> tuple:
+        return np.array([self.x,self.y,self.z])
+
+    @staticmethod
+    def distance(p1, p2) -> float:
+        x = p2.x - p1.x
+        y = p2.y - p1.y
+        z = p2.z - p1.z
+        return (math.sqrt(x**2 + y**2 + z**2))
+
+    @staticmethod
+    def rotX(angle, matrix):
+        rotation_matrix = np.array([
+            [1,     0,                  0               ],
+            [0,     math.cos(angle),    -math.sin(angle)],
+            [0,     math.sin(angle),    math.cos(angle) ]
+        ])
+        return matrix @ rotation_matrix.T
+
+    @staticmethod
+    def rotY(angle, matrix):
+        rotation_matrix = np.array([
+            [math.cos(angle),   0,      math.sin(angle) ],
+            [0,                 1,      0               ],
+            [-math.sin(angle),  0,      math.cos(angle) ]
+        ])
+        return matrix @ rotation_matrix.T
+
+    @staticmethod
+    def rotZ(angle, matrix):
+        rotation_matrix = np.array([
+            [math.cos(angle),   -math.sin(angle),   0],
+            [math.sin(angle),   math.cos(angle),    0],
+            [0,                 0,                  1]
+        ])
+        return matrix @ rotation_matrix.T
+
+
+class Dodecahedron:
+    
+    a = Point(0, PHIS, 1)
+    b = Point(PHI, PHI, PHI)
+    c = Point(1, 0, PHIS)
+    d = Point(-1, 0, PHIS)
+    e = Point(-PHI, PHI, PHI)
+    f = Point(-PHI, PHI, -PHI)
+    g = Point(0, PHIS, -1)
+    h = Point(PHI, PHI, -PHI)
+    i = Point(PHIS, 1, 0)
+    j = Point(PHIS, -1, 0)
+    k = Point(PHI, -PHI, PHI)
+    l = Point(0, -PHIS, 1)
+    m = Point(-PHI, -PHI, PHI)
+    n = Point(-PHIS, -1, 0)
+    o = Point(-PHIS, 1, 0)
+    p = Point(-1, 0, -PHIS)
+    q = Point(1, 0, -PHIS)
+    r = Point(PHI, -PHI, -PHI)
+    s = Point(0, -PHIS, -1)
+    t = Point(-PHI, -PHI, -PHI)
+
     def __init__(self):
-        self.nodes_merge_intersections = []
-        self.edges_non_merge_sections = []
-class State:
-    def __init__(self):
-        self.img = None
-        self.filename = None
-        self.edges = None
-        self.hierarchy = None
-        self.contours_raw = None
-        self.merge_sections = MergeSections()
-
-def contour_convert(state):
-    if state is None or state.img is None:
-        raise FileNotFoundError(f"image not created")
-    gray = cv2.cvtColor(state.img, cv2.COLOR_BGR2GRAY)
-    edges = cv2.Canny(gray, threshold1=LOW_EDGE_THRESHOLD, threshold2=HIGH_EDGE_THRESHOLD)
-    contours, hierarchy = cv2.findContours(edges, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
-    return edges, contours, hierarchy
-
-def load_image(state):
-    if state is None or state.filename not in images:
-        raise KeyError(f"image {state.filename} not found in images")
-    img = cv2.imread(images[state.filename], cv2.IMREAD_UNCHANGED)
-    if img is None:
-        raise FileNotFoundError(f"image not created")
-    return img
-
-def find_merges(c1, c2):
-    if state is None or state.contours_raw is None:
-        raise KeyError(f"state.countours not found in state object")
-    
-    #find merge pairs
-    merge_arr = []
-    nonmerge_arr = []
-    for i in range(len(c1)):
-        for j in range(len(c2)):
-            del_vect = c2[j] - c1[i]
-            if np.linalg.norm(del_vect) < MERGE_THRESHOLD:
-                merge_arr.append((i, j, c1[i], c2[j], ((c1[i][0]+c2[j][0])/2, c1[i][1]+c2[j][1]))) #let's just do this naively for now
-            else:
-                nonmerge_arr.append((i, j, c1[i], c2[j]))
-
-    #merge nearby    
-    merge_sections = []
-    visited = set()
-    for index, data in enumerate(merge_arr):
-        if index in visited: continue
-
-        current_section = []
-        stack = [index]
-
-        while stack:
-            curr_idx = stack.pop(index)
-            if curr_idx in visited: continue
-            current_section.append(merge_arr[curr_idx])
-            visited.add(curr_idx)
-
-            for other_idx, other_data in enumerate(merge_arr):
-                if other_idx in visited: continue
-                if np.linalg.norm(data[4] - other_data[4]) < MERGE_THRESHOLD:
-                    stack.append(other_idx)
         
-        merge_sections.append(current_section)
+        # to khang: i got these points by just drawing a schlegel and then manually tracing a valid path through them lmao
+        # it's 2 vertices longer than an optimal path but that honestly doesn't matter for such a low number of points
+        # https://imgur.com/FsOBkUS
+        self.path = [self.t, self.p, self.f, self.o, self.n, self.t, self.s, self.l, self.m, self.n, self.o, self.e, self.d, self.m, self.d, self.c, self.k, self.l, self.k, self.j, self.i, self.b, self.c, self.b, self.i, self.h, self.g, self.a, self.b, self.a, self.e, self.a, self.g, self.f, self.p, self.q, self.h, self.q, self.r, self.j, self.r, self.s]
+        self.path_positions = np.array([v.position() for v in self.path])
 
-    #find range of each merge section
-    indexed_merge_sections = []
-    for section in merge_sections:
-        i_indices = [data[0] for data in section]
-        j_indices = [data[1] for data in section]
-
-        indexed_merge_sections.append({
-            "section":section,
-            "max_i_index":max(i_indices), 
-            "min_i_index":min(i_indices), 
-            "max_j_indices":max(j_indices), 
-            "min_j_indices":min(j_indices)})
-    
-    #partition
-    # generate 2 arrays for the nonmerge sections, ordered by c1, and c2
-    # loop through merge sections, for each section grab max and min index - then, for arrc1_nonmerge, get idices in range
-    # stich the merge section and relevant nonmerge together
-    # run for both c1 and c2
-    # merge section should be symmetric between the two, so only need 1
-    # nonmerge sections can be appended as {"contour":c1/c2, "data":[merge section]}
-    
-    arr_c1_nonmerge = []
-    for data in nonmerge_arr:
-        arr_c1_nonmerge.append((data[0], data[2])) #drop the other data since Im ordering c1. index = data[0]
-    arr_c1_nonmerge.sort(key=lambda x: x[0])
-
-    arr_c2_nonmerge = []
-    for data in nonmerge_arr:
-        arr_c2_nonmerge.append((data[1], data[3])) #drop the other data since Im ordering c2. index = data[1]
-    arr_c2_nonmerge.sort(key=lambda x: x[0])
-
-    c1_nonmerge_index_counter = 0
-    c2_nonmerge_index_counter = 0
-    arr_c1_merge = []
-    arr_c2_merge = []
-
-    #partition c1
-    for c1_section in indexed_merge_sections:
-        min_c1_index = section["min_i_index"]
-        max_c1_index = section["max_i_index"]
-        slice_c1_nonmerge = [item for item in arr_c1_nonmerge if item[0] >= min_c1_index and item[0] <= max_c1_index]
-        slice_c1_merge = sorted(c1_section["section"], key=lambda x: x[0])
-        combined_c1_merge_section = list(heapq.merge(slice_c1_nonmerge, slice_c1_merge, key=lambda x: x[0]))
-        arr_c1_merge.append(combined_c1_merge_section)
-
-    #handle nonmerges for c1
-    
-
-    
-
-
-
-    return merge_sections
-
-def perform_merge(contour1, contour2, to_merge):
-    return None
-
-def merge(state):
-    if state is None or state.contours_raw is None:
-        raise KeyError(f"state.countours not found in state object")
-    
-    contours = [{'contour':c, 'checked':False} for c in state.contours_raw]
-    merge_sections = None
-
-    a_contour_was_changed = True
-    while a_contour_was_changed:
-        a_contour_was_changed = False
-
-        for i in range(len(contours)):
-            contour_base = contours[i]["contour"]
-            if contours[i]["checked"]: continue
-
-            for j in range(i+1, len(contours)):
-                contour_comparison = contours[j]["contour"]
-                merge_sections = find_merges(contour_base, contour_comparison)
-
-                if merge_sections:
-                    merged_contour = {'contour': perform_merge(contours[i], contours[j], merge_sections),'checked':False}
-                    contours[i] = merged_contour
-                    contours.pop(j)
-                    a_contour_was_changed = True
-                    break
-
-            if not a_contour_was_changed:
-                contours[i]["checked"] = True
-        
-        if not a_contour_was_changed and all(c['checked'] for c in contours):
-            break
-
-    return None
 
 if __name__ == "__main__":
-    state = State()
-    state.filename = "shape"
 
-    state.img = load_image(state)
-    state.edges, state.contours_raw, state.hierarchy = contour_convert(state)
-    state.merged_contour = merge(state)
+    frame = None
+    dd = Dodecahedron()
+    frame_rotations = rg.get_frame_rotations()
+    frame_data = []
 
-    # temp rendering code
-    # nah this ain't worth it the eps is too small anyways
+    # start movement at 03:03:471, 18103471
+    # project dodecahedron to playfield
+    for i in range(FRAME_COUNTER):
+        t = i / FRAME_COUNTER
+        th_x = (frame_rotations[i]["thX"] + 47) * math.pi/180
+        th_y = (frame_rotations[i]["thY"] + 39) * math.pi/180
+        th_z = (frame_rotations[i]["thZ"] + 120)* math.pi/180
 
-    contour_image = np.zeros_like(state.img)
+        rotated = Point.rotX(th_x, Point.rotY(th_y, Point.rotZ(th_z, dd.path_positions)))
+        rotated = rotated[:, :2] # remove z to project
+    
+        #scale the points to the playfield
+        scaled_xy = rotated * np.array([frame_rotations[i]["size"] * 50, frame_rotations[i]["size"] * 50])
+        rounded_xy = np.round(scaled_xy).astype(int)
 
-    cv2.drawContours(contour_image, state.contours_raw, contourIdx=-1, color=(255, 255, 255), thickness=1)
-    cv2.namedWindow('Grayscale', cv2.WINDOW_NORMAL)
-    cv2.imshow('Grayscale', contour_image)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
+        frame_data.append(rounded_xy)
 
+    # the rest of the code fits the slider so that it lasts for 1/8th of a beat
+    frame_distances = []
+    for frame in frame_data:
+        frame = np.array(frame)
+        deltas = np.diff(frame, axis=0)
+        distances = np.linalg.norm(deltas, axis=1)
+        frame_distances.append(np.sum(distances))
 
+    with open(FILENAME, 'r', encoding="utf-8") as f:
+        content = f.readlines()
 
+    sections = {}
+    current_section = None
 
-# grayscale, cleanup, gaussian
-    # edge detection
-    # get a list of contours
-    # set flag to false
-    # ingnore the trivial i=j case (index x,x)
-    # for every countour, pairwise check to return a list of MergeSections: {sections: [pairs of indices where misdist is under a threshold], nonmergec1:[nested list of indices for non-merged sections], indicesc2:[same for c2]} ]
-        # define a MergeSection as: dist between points is under some threshold. once I go above that threshold, start counting down. once I hit zero, that's the end of the threshold. If I go back below the threshold, then it's still the same segment and I reset the counter
-        #can use a many to many mapping, that's fine -- when I merge them together it'll be the easiest
-    # merge by averaging each pair of points, and making each index from list of segments a "merge section"
-        # then pick the first merge section, and add that to the merged contour. trace a set of points until I exit the merge section, then pick a non-traversed non-merge segment.
-        # traverse until I reach another intersection.
-        # repeat until I return to home node and there are no more non-traversed edges
-        # provably works because each node has an even number of connected edges, and if you leave then you enter the next time or vice versa, so on non-starter nodes enter->leave->enter->leave (done) and for starter nodes have leave->...enter (done) . Also, you are forced to remove 2 non-traversed edges each time you visit a node, so therefore you are forced to end on starter when there are no more non-traversed edges
-        # append the merged contour to a list, and to a "merged" list to avoid duplicating like (2,3) and (3,2)
-    # set the countour list to that list, and flag = true
-    # repeat while flag = true
+    for line in content:
+        line = line.strip()
 
+        if line.startswith('[') and line.endswith(']'):
+            current_section = line[1:-1]
+            sections[current_section] = []
+        elif current_section and line and not line.startswith('//'):
+            sections[current_section].append(line)
+    
+    slider_multiplier = float(sections["Difficulty"][4].split(":")[1])
+    
+    frame_strings = []
+    for idx, frame in enumerate(frame_data, start=1):
+        frame_offset = round(BASE_OFFSET + (idx-1) * MS_PER_BEAT/4)
+        frame_x = frame[0][0]
+        frame_y = frame[0][1]
+        frame_string = []
+        points_str = "|".join(f"{point[0]+X_OFFSET}:{point[1]+Y_OFFSET}|{point[0]+X_OFFSET}:{point[1]+Y_OFFSET}" for point in frame[1:])
+        frame_string = f"{frame_x+X_OFFSET},{frame_y+Y_OFFSET},{frame_offset},2,0,L|{points_str},1,{round(frame_distances[idx-1])}"
+        frame_strings.append(frame_string)
 
-# figure out how to convert a gif into a set of images
-# parse some .osu file so that I can grab timing data so that I know what offset to place the object + the slider velocity
-# build the slider strings based on the slider path I generate in the code
+        with open("output_objects.txt", 'w') as f:
+            f.write("\n".join(frame_strings))
 
-# try to figure out an algo to always make the slider ssable
-# stack a simple GUI layer on top so that the tool isn't restricted to command line
+    def find_BPM(distance):
+        sv_factor = slider_multiplier * 1000
+        total_time = MS_PER_BEAT/8.0
+        ms_per_beat_divided = (sv_factor * total_time) / distance.item()
+        return ms_per_beat_divided
+
+    #and then I just dump it to a file and manually copy/paste into the level
+    #i thought it'd be faster than generating a .osu every time, but in retrospect that was incorrect
+    timing_strings = []
+    STARTING_VOLUME = 30
+    VOLUME_RANGE = 40
+    for idx, frame in enumerate(frame_data, start=1):
+        timing_offset = round(BASE_OFFSET + (idx-1) * MS_PER_BEAT/4) - 1
+        BPM = find_BPM(frame_distances[idx-1])
+        timing_string = f"{timing_offset},{BPM},4,2,0,{round(STARTING_VOLUME+VOLUME_RANGE*(idx/len(frame_data)))},1,0"
+        timing_strings.append(timing_string)
+        
+        timing_string_2 = f"{timing_offset+1},{-10},4,2,0,{round(STARTING_VOLUME+VOLUME_RANGE*(idx/len(frame_data)))},0,0"
+        timing_strings.append(timing_string_2)
+        
+        with open("output_timing.txt", 'w') as f:
+            f.write("\n".join(timing_strings))
+        #181471,-10,4,2,0,30,0,0
+        #offset, multiplier (as percentage of -100), meter, sampleset iter (default, normal, soft, drum), sampleset index, volume, ?inhereted, effects (int) bitflags for additional effects such as kiai time
+    
+
+    print("Done")
+
+    #notes to self
+    #for sv: sv caps at x10 at -10, [2000,-10,4,1,0,100,0,0] -> [timestamp (2s), sv (x10), X, X, X, type - 0 = sv, 1 = timing, X]
+    #for timing point: [0,250,4,1,0,100,1,0] -> timestamp, ms/beat ... type = 1
+    #SliderMultiplier: base slider vel in hectopixels/beat 
+
+    #x,y,time,type,hitSound,objectParams,hitSample
+    #slider: [120,122,2000,2,0,L|434:284,1,350] -> x,y,time,type,hitSound as bitflags,curveType|curvePoints,slides,length,edgeSounds,edgeSets,hitSample
+    # L|434:284,1,350 -> type linear, end 434:284, repeat 1 time, length 350 px
+    #  (B = bézier, C = centripetal catmull-rom, L = linear, P = perfect circle)
+
+    # okay so: find total length of the slider given all the points I hit
+    # then scale the bpm and sv to match that
+    # then create an object string at OFFSET + object_counter*1/4beat_offset at set x,y, 
+    # and then generate the 
+    # slider points, which should look vaguely like 
+    # B|246:224|246:224|319:193|319:193|418:52|418:52|618:346, where each item in
+    # the pipe seperated list is x:y of a point in the dodecahedron
+    # https://osu.ppy.sh/wiki/en/Client/File_formats/osu_%28file_format%29
+
+    
+    
